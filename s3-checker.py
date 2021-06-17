@@ -37,9 +37,10 @@ def main():
     with open('accounts') as acc:
         accounts = json.load(acc)
     
+    buckets = {}
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
-        buckets = get_buckets(s3client)
+        buckets[account] = get_buckets(s3client)
         print(buckets)
 
 if __name__ == '__main__':
