@@ -5,6 +5,16 @@ import datetime
 import json
 from botocore.exceptions import ClientError
 
+def get_acl(s3client, buckets):
+    for bucket in buckets:
+#        policy = s3client.get_bucket_policy_status(Bucket=bucket['name'])
+#        bucket['isPublic'] = policy['PolicyStatus']['IsPublic']
+        acl = s3client.get_bucket_acl(Bucket=bucket['name'])
+        bucket['owner'] = acl['Owner']['DisplayName']
+        bucket['grants'] = []
+        for grant in acl['Grants']:
+            bucket['grants'].append({'grantee': grant['Grantee']['DisplayName'], 'type': grant['Grantee']['Type'], 'permission': grant['Permission']})
+
 def get_buckets(s3client):
     buckets = []
     i = 0
@@ -41,7 +51,11 @@ def main():
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         buckets[account] = get_buckets(s3client)
-        print(buckets)
+
+    for account, token in accounts.items():
+        s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
+        get_acl(s3client, buckets[account])
+    print(buckets)
 
 if __name__ == '__main__':
     main()
