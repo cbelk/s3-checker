@@ -36,7 +36,7 @@ def get_buckets(s3client):
                 elif tagset['Key'] == 'CreatedBy':
                     buckets[i]['createdBy'] = tagset['Value']
             i += 1
-        except ClientError:
+        except s3client.exceptions.from_code('NoSuchTagSet'):
             buckets[i]['project'] = 'Tag N/A'
             buckets[i]['createdBy'] = 'Tag N/A'
             i += 1
