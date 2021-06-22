@@ -7,8 +7,11 @@ from botocore.exceptions import ClientError
 
 def get_acl(s3client, buckets):
     for bucket in buckets:
-#        policy = s3client.get_bucket_policy_status(Bucket=bucket['name'])
-#        bucket['isPublic'] = policy['PolicyStatus']['IsPublic']
+        try:
+            policy = s3client.get_bucket_policy_status(Bucket=bucket['name'])
+            bucket['isPublic'] = policy['PolicyStatus']['IsPublic']
+        except s3client.exceptions.from_code('NoSuchBucketPolicy'):
+            bucket['isPublic'] = 'No Policy Set'
         acl = s3client.get_bucket_acl(Bucket=bucket['name'])
         bucket['owner'] = acl['Owner']['DisplayName']
         bucket['grants'] = []
