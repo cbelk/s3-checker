@@ -9,7 +9,10 @@ def get_acl(s3client, buckets):
     for bucket in buckets:
         try:
             policy = s3client.get_bucket_policy_status(Bucket=bucket['name'])
-            bucket['isPublic'] = policy['PolicyStatus']['IsPublic']
+            if policy['PolicyStatus']['IsPublic']:
+                bucket['isPublic'] = 'True'
+            else:
+                bucket['isPublic'] = 'False'
         except s3client.exceptions.from_code('NoSuchBucketPolicy'):
             bucket['isPublic'] = 'No Policy Set'
         acl = s3client.get_bucket_acl(Bucket=bucket['name'])
