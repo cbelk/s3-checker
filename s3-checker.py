@@ -7,8 +7,11 @@ from botocore.exceptions import ClientError
 
 def get_acl(s3client, buckets):
     for bucket in buckets:
-#        policy = s3client.get_bucket_policy_status(Bucket=bucket['name'])
-#        bucket['isPublic'] = policy['PolicyStatus']['IsPublic']
+        try:
+            policy = s3client.get_bucket_policy_status(Bucket=bucket['name'])
+            bucket['isPublic'] = policy['PolicyStatus']['IsPublic']
+        except s3client.exceptions.from_code('NoSuchBucketPolicy'):
+            bucket['isPublic'] = 'No Policy Set'
         acl = s3client.get_bucket_acl(Bucket=bucket['name'])
         bucket['owner'] = acl['Owner']['DisplayName']
         bucket['grants'] = []
@@ -36,11 +39,19 @@ def get_buckets(s3client):
                 elif tagset['Key'] == 'CreatedBy':
                     buckets[i]['createdBy'] = tagset['Value']
             i += 1
-        except ClientError:
+        except s3client.exceptions.from_code('NoSuchTagSet'):
             buckets[i]['project'] = 'Tag N/A'
             buckets[i]['createdBy'] = 'Tag N/A'
             i += 1
     return buckets
+
+def get_encryption(s3client, buckets):
+    for bucket in buckets:
+        try:
+            encryption = s3client.get_bucket_encryption(Bucket=bucket['name'])
+            bucket['encryption'] = encryption['ServerSideEncryptionConfiguration']['Rules'][0]['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
+        except s3client.exceptions.from_code('ServerSideEncryptionConfigurationNotFoundError'):
+            bucket['encryption'] = 'Default encryption not configured'
 
 def main():
     # Get access keys and secrets !! NOTE: will change to using aws secrets manager
@@ -55,6 +66,11 @@ def main():
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         get_acl(s3client, buckets[account])
+
+    for account, token in accounts.items():
+        s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
+        get_encryption(s3client, buckets[account])
+
     print(buckets)
 
 if __name__ == '__main__':
