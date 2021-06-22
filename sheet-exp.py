@@ -12,7 +12,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from apiclient.http import MediaFileUpload
 import pickle
-from datetime import datetime
+import datetime
 
 def create_spreadsheet():
 #Scopes that we are using for the APIs
@@ -23,7 +23,7 @@ def create_spreadsheet():
     credentials = service_account.Credentials.from_service_account_file(secret_file, scopes=SCOPES)
 # Destination Folder
     folder_id = '10wm-laVa5QfzGschhCyi9CwFN2Q4Uehp'
-    title = 'S3Buckets'  #TODO:add date/timestamp
+    title = 'S3Buckets-' + datetime.datetime.now().strftime('%Y/%m/%d')
 # Starting service + Creating a spreadsheet
     service = discovery.build('drive', 'v3', credentials=credentials)
     file_metadata = {
