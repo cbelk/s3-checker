@@ -45,6 +45,14 @@ def get_buckets(s3client):
             i += 1
     return buckets
 
+def get_encryption(s3client, buckets):
+    for bucket in buckets:
+        try:
+            encryption = s3client.get_bucket_encryption(Bucket=bucket['name'])
+            bucket['encryption'] = encryption['ServerSideEncryptionConfiguration']['Rules'][0]['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
+        except s3client.exceptions.from_code('ServerSideEncryptionConfigurationNotFoundError'):
+            bucket['encryption'] = 'Default encryption not configured'
+
 def main():
     # Get access keys and secrets !! NOTE: will change to using aws secrets manager
     with open('accounts') as acc:
@@ -58,6 +66,11 @@ def main():
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         get_acl(s3client, buckets[account])
+
+    for account, token in accounts.items():
+        s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
+        get_encryption(s3client, buckets[account])
+
     print(buckets)
 
 if __name__ == '__main__':
