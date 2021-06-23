@@ -3,7 +3,17 @@
 import boto3
 import datetime
 import json
+import math
 from botocore.exceptions import ClientError
+
+def convert_size(size_bytes):
+   if size_bytes == 0:
+       return '0B'
+   size_name = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+   i = int(math.floor(math.log(size_bytes, 1024)))
+   p = math.pow(1024, i)
+   s = round(size_bytes / p, 2)
+   return '%s %s' % (s, size_name[i])
 
 def get_acl(s3client, buckets):
     for bucket in buckets:
@@ -20,6 +30,29 @@ def get_acl(s3client, buckets):
         bucket['grants'] = []
         for grant in acl['Grants']:
             bucket['grants'].append({'grantee': grant['Grantee']['DisplayName'], 'type': grant['Grantee']['Type'], 'permission': grant['Permission']})
+
+def get_average_size(cwclient, buckets):
+    seconds_in_a_day = 86400
+    for bucket in buckets:
+        metric = cwclient.get_metric_statistics(
+            Namespace='AWS/S3',
+            Dimensions=[{'Name': 'BucketName', 'Value': bucket['name']}, {'Name': 'StorageType', 'Value': 'StandardStorage'}],
+            MetricName='BucketSizeBytes',
+            StartTime=datetime.datetime.now() - datetime.timedelta(days=7),
+            EndTime=datetime.datetime.now(),
+            Period=seconds_in_a_day,
+            Statistics=['Average'],
+            Unit='Bytes'
+        )
+        if not metric['Datapoints']:
+            # If no datapoints returned set to -1
+            bucket['averageSize'] = -1.0
+        else:
+            total=0.0
+            for point in metric['Datapoints']:
+                total += point['Average']
+            avg = total / len(metric['Datapoints'])
+            bucket['averageSize'] = convert_size(avg)
 
 def get_buckets(s3client):
     buckets = []
@@ -73,6 +106,10 @@ def main():
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         get_encryption(s3client, buckets[account])
+
+    for account, token in accounts.items():
+        cwclient = boto3.client( 'cloudwatch', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'], region_name='us-east-1')
+        get_average_size(cwclient, buckets[account])
 
     print(buckets)
 
