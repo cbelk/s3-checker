@@ -4,6 +4,7 @@ import boto3
 import datetime
 import json
 import math
+import pygsheets
 from botocore.exceptions import ClientError
 
 def convert_size(size_bytes):
@@ -14,6 +15,19 @@ def convert_size(size_bytes):
    p = math.pow(1024, i)
    s = round(size_bytes / p, 2)
    return '%s %s' % (s, size_name[i])
+
+def create_sheet(gc, buckets):
+   folder_id = gc.drive.get_folder_id(name='S3 Buckets') 
+   spreadsheet = gc.create(title='S3Buckets-' + datetime.datetime.now().strftime('%Y/%m/%d'), folder=folder_id)
+   worksheet = spreadsheet.sheet1
+   titles = [['Account', 'Bucket Name', 'Created By', 'Date Created', 'Project', 'Owner', 'Average Size', 'Encryption', 'Is Public', 'Permission Grants']]
+   worksheet.update_values(crange='A1:J1', values=titles)
+   headers = worksheet.range(crange='A1:J1')
+   for header in headers[0]:
+       header.set_text_format('bold', True)
+       header.set_horizontal_alignment(pygsheets.custom_types.HorizontalAlignment.CENTER)
+       header.color = (.698, .698, .694, 1.0)
+   worksheet.frozen_rows = 1
 
 def get_acl(s3client, buckets):
     for bucket in buckets:
@@ -104,6 +118,9 @@ def main():
         get_average_size(cwclient, buckets[account])
 
     print(buckets)
+
+    gc = pygsheets.authorize(service_file='credentials.json')
+    create_sheet(gc, buckets)
 
 if __name__ == '__main__':
     main()
