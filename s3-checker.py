@@ -98,16 +98,8 @@ def main():
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         buckets[account] = get_buckets(s3client)
-
-    for account, token in accounts.items():
-        s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         get_acl(s3client, buckets[account])
-
-    for account, token in accounts.items():
-        s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
         get_encryption(s3client, buckets[account])
-
-    for account, token in accounts.items():
         cwclient = boto3.client( 'cloudwatch', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'], region_name='us-east-1')
         get_average_size(cwclient, buckets[account])
 
