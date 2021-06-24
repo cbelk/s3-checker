@@ -61,6 +61,9 @@ def populate_spreadsheet():
 
     print(worksheet)
 
+def email_spreadsheet():
+
+
 
 def main():
     # Running my create spreadsheet function
