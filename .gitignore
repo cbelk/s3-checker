@@ -1,4 +1,5 @@
 accounts
+credentials_oauth.json
 *.swo
 *.swp
 bucketOfPickles
