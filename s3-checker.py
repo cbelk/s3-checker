@@ -33,13 +33,31 @@ def create_sheet(gc, buckets):
         for bucket in bucks:
             perms = ''
             for grant in bucket['grants']:
-                perms += 'grantee: ' + grant['grantee'] + ' type: ' + grant['type'] + ' permission: ' + grant['permission'] + '\n'
+                perms += 'grantee: ' + grant['grantee'] + ' | type: ' + grant['type'] + ' | permission: ' + grant['permission'] + '\n'
             if bucket['averageSize'] == -1:
                 avg = 'Data not available'
             else:
                 avg = bucket['averageSize']
             row = [[account, bucket['name'], bucket['createdBy'], bucket['creationDate'], bucket['project'], bucket['owner'], avg, bucket['encryption'], bucket['isPublic'], perms]]
             worksheet.update_values(crange='A'+str(i)+':J'+str(i), values=row)
+            if bucket['isPublic'] == 'True':
+                worksheet.cell('I'+str(i)).color = (1.0, 0.0, 0.0, 1.0)
+            markReview = False
+            markDanger = False
+            for grant in bucket['grants']:
+                if grant['type'] == 'Group':
+                    markReview = True
+                    if grant['URI'] == 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers' or grant['URI'] == 'http://acs.amazonaws.com/groups/global/AllUsers':
+                        markDanger = True
+                elif grant['type'] == 'AmazonCustomerByEmail':
+                    markReview = True
+                elif grant['type'] == 'CanonicalUser':
+                    if grant['grantee'] != bucket['owner']:
+                        markReview = True
+            if markReview:
+                worksheet.cell('J'+str(i)).color = (1.0, 1.0, 0.0, 1.0)
+            if markDanger:
+                worksheet.cell('J'+str(i)).color = (1.0, 0.0, 0.0, 1.0)
             i += 1
     worksheet.adjust_column_width(1, 10)
 
