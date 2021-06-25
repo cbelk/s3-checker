@@ -61,6 +61,18 @@ def create_sheet(gc, buckets):
             i += 1
     worksheet.adjust_column_width(1, 10)
 
+def clean_up(gc):
+    sheets = gc.drive.list(corpora='user')
+    datelimit = datetime.datetime.today() - datetime.timedelta(days=70)
+    for sheet in sheets:
+        if sheet['mimeType'] == 'application/vnd.google-apps.spreadsheet' and 'S3Buckets' in sheet['name']:
+            if 'KEEP' in sheet['name']:
+                continue
+            d = sheet['name'].split('-')[1].split('/')
+            date = datetime.datetime(int(d[0]), int(d[1]), int(d[2]))
+            if date < datelimit:
+                gc.drive.delete(sheet['id'])
+
 def get_acl(s3client, buckets):
     for bucket in buckets:
         try:
@@ -116,7 +128,7 @@ def get_buckets(s3client):
                 buckets[i]['project'] = 'Tag N/A'
                 buckets[i]['createdBy'] = 'Tag N/A'
                 i += 1
-                break
+                continue
             for tagset in res['TagSet']:
                 if tagset['Key'] == 'Project':
                     buckets[i]['project'] = tagset['Value']
@@ -154,6 +166,7 @@ def main():
 
     gc = pygsheets.authorize(service_file='credentials.json')
     create_sheet(gc, buckets)
+    clean_up(gc)
 
 if __name__ == '__main__':
     main()
