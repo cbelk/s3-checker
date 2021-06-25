@@ -8,26 +8,40 @@ import pygsheets
 from botocore.exceptions import ClientError
 
 def convert_size(size_bytes):
-   if size_bytes == 0:
-       return '0B'
-   size_name = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
-   i = int(math.floor(math.log(size_bytes, 1024)))
-   p = math.pow(1024, i)
-   s = round(size_bytes / p, 2)
-   return '%s %s' % (s, size_name[i])
+    if size_bytes == 0:
+        return '0B'
+    size_name = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return '%s %s' % (s, size_name[i])
 
 def create_sheet(gc, buckets):
-   folder_id = gc.drive.get_folder_id(name='S3 Buckets') 
-   spreadsheet = gc.create(title='S3Buckets-' + datetime.datetime.now().strftime('%Y/%m/%d'), folder=folder_id)
-   worksheet = spreadsheet.sheet1
-   titles = [['Account', 'Bucket Name', 'Created By', 'Date Created', 'Project', 'Owner', 'Average Size', 'Encryption', 'Is Public', 'Permission Grants']]
-   worksheet.update_values(crange='A1:J1', values=titles)
-   headers = worksheet.range(crange='A1:J1')
-   for header in headers[0]:
-       header.set_text_format('bold', True)
-       header.set_horizontal_alignment(pygsheets.custom_types.HorizontalAlignment.CENTER)
-       header.color = (.698, .698, .694, 1.0)
-   worksheet.frozen_rows = 1
+    folder_id = gc.drive.get_folder_id(name='S3 Buckets') 
+    spreadsheet = gc.create(title='S3Buckets-' + datetime.datetime.now().strftime('%Y/%m/%d'), folder=folder_id)
+    worksheet = spreadsheet.sheet1
+    titles = [['Account', 'Bucket Name', 'Created By', 'Date Created', 'Project', 'Owner', 'Average Size', 'Encryption', 'Is Public', 'Permission Grants']]
+    worksheet.update_values(crange='A1:J1', values=titles)
+    headers = worksheet.range(crange='A1:J1')
+    for header in headers[0]:
+        header.set_text_format('bold', True)
+        header.set_horizontal_alignment(pygsheets.custom_types.HorizontalAlignment.CENTER)
+        header.color = (.698, .698, .694, 1.0)
+    worksheet.frozen_rows = 1
+    i = 2
+    for account, bucks in buckets.items():
+        for bucket in bucks:
+            perms = ''
+            for grant in bucket['grants']:
+                perms += 'grantee: ' + grant['grantee'] + ' type: ' + grant['type'] + ' permission: ' + grant['permission'] + '\n'
+            if bucket['averageSize'] == -1:
+                avg = 'Data not available'
+            else:
+                avg = bucket['averageSize']
+            row = [[account, bucket['name'], bucket['createdBy'], bucket['creationDate'], bucket['project'], bucket['owner'], avg, bucket['encryption'], bucket['isPublic'], perms]]
+            worksheet.update_values(crange='A'+str(i)+':J'+str(i), values=row)
+            i += 1
+    worksheet.adjust_column_width(1, 10)
 
 def get_acl(s3client, buckets):
     for bucket in buckets:
@@ -74,6 +88,8 @@ def get_buckets(s3client):
     bucks = s3client.list_buckets()
     for bucket in bucks['Buckets']:
         buckets.append({'name': bucket['Name'], 'creationDate': bucket['CreationDate'].strftime('%b %d, %Y')})
+        buckets[i]['project'] = 'Tag N/A'
+        buckets[i]['createdBy'] = 'Tag N/A'
         try:
             res = s3client.get_bucket_tagging(Bucket=bucket['Name'])
             if res['ResponseMetadata']['HTTPStatusCode'] != 200:
@@ -90,9 +106,8 @@ def get_buckets(s3client):
                     buckets[i]['createdBy'] = tagset['Value']
             i += 1
         except s3client.exceptions.from_code('NoSuchTagSet'):
-            buckets[i]['project'] = 'Tag N/A'
-            buckets[i]['createdBy'] = 'Tag N/A'
             i += 1
+
     return buckets
 
 def get_encryption(s3client, buckets):
