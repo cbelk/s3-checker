@@ -1,6 +1,5 @@
 accounts
-credentials_oauth.json
+*.bak
 *.swo
 *.swp
-bucketOfPickles
 credentials.json
