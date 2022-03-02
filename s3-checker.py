@@ -4,8 +4,11 @@ import boto3
 import datetime
 import json
 import math
+import os
 import pygsheets
+import sys
 from botocore.exceptions import ClientError
+from google.oauth2 import service_account
 
 def convert_size(size_bytes):
     if size_bytes == 0:
@@ -61,9 +64,9 @@ def create_sheet(gc, buckets):
             i += 1
     worksheet.adjust_column_width(1, 10)
 
-def clean_up(gc):
+def clean_up(gc, days_old):
     sheets = gc.drive.list(corpora='user')
-    datelimit = datetime.datetime.today() - datetime.timedelta(days=70)
+    datelimit = datetime.datetime.today() - datetime.timedelta(days=days_old)
     for sheet in sheets:
         if sheet['mimeType'] == 'application/vnd.google-apps.spreadsheet' and 'S3Buckets' in sheet['name']:
             if 'KEEP' in sheet['name']:
@@ -123,7 +126,6 @@ def get_buckets(s3client):
         try:
             res = s3client.get_bucket_tagging(Bucket=bucket['Name'])
             if res['ResponseMetadata']['HTTPStatusCode'] != 200:
-                # NOTE: replace with logging when moving to lambda
                 print('Response code of ' + str(res['ResponseMetadata']['HTTPStatusCode']) + ' for bucket ' + bucket['Name'])
                 buckets[i]['project'] = 'Tag N/A'
                 buckets[i]['createdBy'] = 'Tag N/A'
@@ -144,15 +146,68 @@ def get_encryption(s3client, buckets):
     for bucket in buckets:
         try:
             encryption = s3client.get_bucket_encryption(Bucket=bucket['name'])
-            bucket['encryption'] = encryption['ServerSideEncryptionConfiguration']['Rules'][0]['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
         except s3client.exceptions.from_code('ServerSideEncryptionConfigurationNotFoundError'):
             bucket['encryption'] = 'Default encryption not configured'
+        else:
+            bucket['encryption'] = encryption['ServerSideEncryptionConfiguration']['Rules'][0]['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
 
-def main():
-    # Get access keys and secrets !! NOTE: will change to using aws secrets manager
-    with open('accounts') as acc:
-        accounts = json.load(acc)
-    
+def get_oauth2(region, name):
+    client = boto3.client('secretsmanager', region_name=region)
+    secret = {}
+    try:
+        secret_response = client.get_secret_value(SecretId='s3-bucket-checker/{}'.format(name))
+    except ClientError as e:
+        print(e)
+    else:
+        secret = json.loads(secret_response['SecretString'])
+    return secret
+
+def get_secrets(region, clouds):
+    client = boto3.client('secretsmanager', region_name=region)
+
+    accounts = {}
+    for cloud in clouds:
+        try:
+            secret_response = client.get_secret_value(SecretId='s3-bucket-checker/{}'.format(cloud))
+        except ClientError as e:
+            print(e)
+        else:
+            secret = json.loads(secret_response['SecretString'])
+            accounts[cloud] = {'key': secret['key'], 'secret': secret['secret']}
+    return accounts
+
+def main(event={}, context={}):
+    # Sheets older than days_old will be deleted.
+    # If running in lambda this can be set via environment variable DAYS_OLD
+    days_old = 70
+    # Test if running in AWS Lambda or local and get keys and tokens
+    inLambda = os.environ.get('AWS_EXECUTION_ENV') is not None
+    if (inLambda):
+        region = 'us-east-1'
+        # Set this in the lambda functions CLOUD_ACCOUNTS envrionment variable
+        if os.environ.get('CLOUD_ACCOUNTS') is not None:
+            clouds = os.environ.get('CLOUD_ACCOUNTS').split(';')
+        else:
+            sys.exit('s3-bucket-checker: No cloud accounts set in CLOUD_ACCOUNTS variable.')
+        # The google oauth2 secret name. Ex. this one is s3-bucket-checker/oauth2
+        oauth2_name = 'oauth2'
+        accounts = get_secrets(region, clouds)
+        if not accounts:
+            sys.exit('s3-bucket-checker: No account API keys retrieved.')
+        service_account_info = get_oauth2(region, oauth2_name)
+        if not service_account_info:
+            sys.exit('s3-bucket-checker: No google service account oauth2 information retrieved.')
+        SCOPES = ('https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive')
+        credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+        gc = pygsheets.authorize(custom_credentials=credentials)
+        if os.environ.get('DAYS_OLD') is not None:
+            days_old = int(os.environ.get('DAYS_OLD'))
+    else:
+        with open('accounts') as acc:
+            accounts = json.load(acc)
+        with open('credentials.json') as cred:
+            gc = pygsheets.authorize(service_file='credentials.json')
+
     buckets = {}
     for account, token in accounts.items():
         s3client = boto3.client( 's3', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'])
@@ -162,11 +217,8 @@ def main():
         cwclient = boto3.client( 'cloudwatch', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'], region_name='us-east-1')
         get_average_size(cwclient, buckets[account])
 
-    print(buckets)
-
-    gc = pygsheets.authorize(service_file='credentials.json')
     create_sheet(gc, buckets)
-    clean_up(gc)
+    clean_up(gc, days_old)
 
 if __name__ == '__main__':
     main()
