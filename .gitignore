@@ -3,3 +3,4 @@ accounts
 *.swo
 *.swp
 credentials.json
+slack
