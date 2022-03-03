@@ -6,6 +6,7 @@ import json
 import math
 import os
 import pygsheets
+import requests
 import sys
 from botocore.exceptions import ClientError
 from google.oauth2 import service_account
@@ -21,7 +22,8 @@ def convert_size(size_bytes):
 
 def create_sheet(gc, buckets):
     folder_id = gc.drive.get_folder_id(name='S3 Buckets') 
-    spreadsheet = gc.create(title='S3Buckets-' + datetime.datetime.now().strftime('%Y/%m/%d'), folder=folder_id)
+    sheet_name='S3Buckets-' + datetime.datetime.now().strftime('%Y/%m/%d')
+    spreadsheet = gc.create(title=sheet_name, folder=folder_id)
     worksheet = spreadsheet.sheet1
     titles = [['Account', 'Bucket Name', 'Created By', 'Date Created', 'Project', 'Owner', 'Average Size', 'Encryption', 'Is Public', 'Permission Grants']]
     worksheet.update_values(crange='A1:J1', values=titles)
@@ -63,6 +65,7 @@ def create_sheet(gc, buckets):
                 worksheet.cell('J'+str(i)).color = (1.0, 0.0, 0.0, 1.0)
             i += 1
     worksheet.adjust_column_width(1, 10)
+    return sheet_name, worksheet.url
 
 def clean_up(gc, days_old):
     sheets = gc.drive.list(corpora='user')
@@ -176,10 +179,29 @@ def get_secrets(region, clouds):
             accounts[cloud] = {'key': secret['key'], 'secret': secret['secret']}
     return accounts
 
+def get_slack_webhook(region, name):
+    client = boto3.client('secretsmanager', region_name=region)
+    channel = {}
+    try:
+        secret_response = client.get_secret_value(SecretId='s3-bucket-checker/{}'.format(name))
+    except ClientError as e:
+        print(e)
+    else:
+        channel = json.loads(secret_response['SecretString'])
+    return channel
+
+def post_slack(channel, sheet_name, worksheet_url):
+    msg = 'Latest run: <{}|{}>'.format(worksheet_url, sheet_name)
+    payload = {'text': msg}
+    r = requests.post(channel['webhook'], data=json.dumps(payload), headers={'Content-Type': 'application/json'})
+    if r.status_code != 200:
+        print('Slack request returned code {}: {}'.format(r.status_code, r.text))
+
 def main(event={}, context={}):
     # Sheets older than days_old will be deleted.
     # If running in lambda this can be set via environment variable DAYS_OLD
     days_old = 70
+    channel = {}
     # Test if running in AWS Lambda or local and get keys and tokens
     inLambda = os.environ.get('AWS_EXECUTION_ENV') is not None
     if (inLambda):
@@ -202,11 +224,15 @@ def main(event={}, context={}):
         gc = pygsheets.authorize(custom_credentials=credentials)
         if os.environ.get('DAYS_OLD') is not None:
             days_old = int(os.environ.get('DAYS_OLD'))
+        webhook_name = 'slack_webhook'
+        channel = get_slack_webhook(region, webhook_name)
     else:
         with open('accounts') as acc:
             accounts = json.load(acc)
         with open('credentials.json') as cred:
             gc = pygsheets.authorize(service_file='credentials.json')
+        with open('slack') as slack:
+            channel = json.load(slack)
 
     buckets = {}
     for account, token in accounts.items():
@@ -217,8 +243,11 @@ def main(event={}, context={}):
         cwclient = boto3.client( 'cloudwatch', aws_access_key_id=token['key'], aws_secret_access_key=token['secret'], region_name='us-east-1')
         get_average_size(cwclient, buckets[account])
 
-    create_sheet(gc, buckets)
+    sheet_name, worksheet_url = create_sheet(gc, buckets)
     clean_up(gc, days_old)
+
+    if channel is not None:
+        post_slack(channel, sheet_name, worksheet_url)
 
 if __name__ == '__main__':
     main()
